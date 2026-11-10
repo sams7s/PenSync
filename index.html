@@ -1,0 +1,629 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b1220"><title>PenSync v5 — ویرایشگر PDF</title>
+<style>
+:root{--bg:#0b1220;--panel:#151f32;--line:#2b3952;--txt:#f3f6ff;--muted:#9cabc4;--blue:#6685ff;--green:#38c98b}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);font-family:Tahoma,Arial,sans-serif}
+header{display:flex;justify-content:space-between;align-items:center;padding:12px 17px;background:#101a2b;border-bottom:1px solid var(--line);gap:10px}
+.brand{font-size:21px;font-weight:900}.brand b{color:#8da5ff}.status{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:7px}.dot{width:8px;height:8px;border-radius:50%;background:#d69b42}.dot.on{background:var(--green)}
+main{max-width:1300px;margin:auto;padding:12px;display:grid;gap:10px}.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:11px}
+.row,.toolbar,.pages{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+input,button,select{font:inherit;border:1px solid var(--line);border-radius:9px;padding:9px 11px;background:#0d1729;color:var(--txt)}
+input{min-width:120px}button{cursor:pointer}button.primary,.active{background:#526fe0;border-color:#526fe0;font-weight:bold}button:disabled{opacity:.4;cursor:not-allowed}
+input[type=color]{padding:2px;width:38px;height:37px;min-width:38px}input[type=range]{width:100px;min-width:80px;padding:0}
+.muted,small{color:var(--muted);font-size:12px;line-height:1.8}.grow{flex:1}.hidden{display:none!important}
+.pagebtn{padding:7px 10px}.pagebtn.active{background:#526fe0}
+.board{height:min(66vh,760px);min-height:320px;background:#fff;border-radius:13px;overflow:hidden;border:1px solid var(--line);touch-action:none;position:relative}
+canvas{display:block;width:100%;height:100%;touch-action:none;cursor:crosshair}
+#toast{position:fixed;bottom:15px;left:50%;transform:translateX(-50%);background:#263650;padding:10px 15px;border:1px solid var(--line);border-radius:10px;display:none;z-index:10;max-width:92%;text-align:center}
+kbd{background:#0d1729;border:1px solid var(--line);padding:2px 5px;border-radius:5px}
+@media(max-width:650px){header{padding:10px}main{padding:8px}.board{height:58vh;min-height:290px}.toolbar button{flex:1}.toolbar{gap:5px}.panel{padding:9px}}
+</style>
+</head>
+<body>
+<header><div class="brand">Pen<b>Sync</b> <small>v3</small></div><div class="status"><i class="dot" id="dot"></i><span id="status">در انتظار اتصال</span></div></header>
+<main>
+<section class="panel" id="authPanel">
+ <b>حساب شخصی</b><p class="muted">روی تمام دستگاه‌ها با یک حساب وارد شو تا دفترها فقط برای خودت قابل دسترسی باشند.</p>
+ <div class="row"><input id="email" type="email" placeholder="ایمیل"><input id="password" type="password" placeholder="رمز عبور"><button class="primary" id="signup">ثبت‌نام</button><button id="login">ورود</button><button id="logout" class="hidden">خروج</button></div>
+</section>
+<section class="panel hidden" id="roomPanel">
+ <div class="row"><button class="primary" id="newRoom">دفتر جدید</button><input id="roomInput" placeholder="کد دفتر" maxlength="40"><button id="openRoom">بازکردن دفتر</button><button id="copyLink" disabled>کپی لینک</button><button id="qrBtn" disabled>QR</button><span class="grow"></span><span class="muted" id="roomLabel">—</span></div>
+ <div class="row"><img id="qr" class="hidden" style="width:112px;height:112px;background:white;padding:5px;border-radius:8px" alt="QR"></div>
+</section>
+<section class="panel hidden" id="workspace">
+ <div class="pages" id="pages"></div>
+ <div class="toolbar" style="margin-top:9px">
+  <button data-tool="pen" class="active">✎ قلم</button><button data-tool="eraser">پاک‌کن</button><button data-tool="line">خط</button><button data-tool="rect">مستطیل</button><button data-tool="ellipse">بیضی</button><button data-tool="text">متن</button><button data-tool="pan">جابجایی</button><button data-tool="select">انتخاب</button>
+  <label class="muted">رنگ</label><input id="color" type="color" value="#172033"><label class="muted">ضخامت</label><input id="size" type="range" min="1" max="28" value="4"><span id="sizeVal" class="muted">4</span>
+  <button id="undo">واگرد</button><button id="redo">ازنو</button><button id="copySelection">کپی</button><button id="pasteSelection">چسباندن</button><button id="deleteSelection">حذف انتخاب</button><button id="editPdfText">ویرایش متن PDF</button><button id="clear">پاک‌کردن صفحه</button><button id="zoomOut">−</button><button id="zoomReset">100٪</button><button id="zoomIn">+</button><button id="png">PNG</button><button id="importPdf">ورود PDF</button><input id="pdfFile" type="file" accept="application/pdf" class="hidden"><button id="exportPdf">خروجی PDF</button><button id="present">ارائه</button>
+ </div>
+</section>
+<div class="board hidden" id="boardWrap"><canvas id="canvas"></canvas></div>
+<p class="muted">قلم: نوشتن با S Pen یا انگشت • جابجایی: ابزار «جابجایی» یا Space + کشیدن • زوم: دکمه‌ها یا Ctrl + چرخ ماوس • متن: انتخاب ابزار متن و لمس محل درج. برای جلوگیری از لمس کف دست، وقتی قلم فعال است ورودی لمسی نادیده گرفته می‌شود. انتخاب: ابزار «انتخاب» و کشیدن دور یک شیء؛ برای جابه‌جایی، شیء انتخاب‌شده را بکش. در PDFهای دارای لایه متنی، قطعات متن را انتخاب و با «ویرایش متن PDF» جایگزین کن.</p>
+</main><div id="toast"></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script>
+(()=>{
+
+const SUPABASE_URL="https://pegwfrcuiqyaeomwhdeq.supabase.co";
+const SUPABASE_ANON_KEY="sb_publishable_hKujgsth1FiZCxMfdqUG-A_KzBo1Ij8";
+
+const $=id=>document.getElementById(id);
+let db=null,user=null,room=null,channel=null,tool="pen",activePage="",pages=[],pageStrokes=new Map(),seen=new Set(),drawing=null,spaceDown=false,penActiveUntil=0;
+let view={scale:1,x:0,y:0},pointerMode=null,lastPan=null;
+const imageCache=new Map();
+let selectedId=null,selectionStart=null,clipboardItem=null,redoStack=[];
+
+const say=m=>{let t=$("toast");t.textContent=m;t.style.display="block";clearTimeout(say.timer);say.timer=setTimeout(()=>t.style.display="none",2800)};
+const status=(s,on=false)=>{$("status").textContent=s;$("dot").classList.toggle("on",on)};
+const uid=()=>crypto.randomUUID();
+const currentStrokes=()=>pageStrokes.get(activePage)||[];
+const show=on=>{$("authPanel").classList.toggle("hidden",on);$("roomPanel").classList.toggle("hidden",!on);$("logout").classList.toggle("hidden",!on)};
+const showBoard=on=>{$("workspace").classList.toggle("hidden",!on);$("boardWrap").classList.toggle("hidden",!on)};
+
+async function auth(mode){
+let email=$("email").value.trim(),password=$("password").value;
+if(!email||password.length<6)return say("ایمیل و رمز حداقل ۶ کاراکتری وارد کن.");
+let r=mode==="signup"?await db.auth.signUp({email,password}):await db.auth.signInWithPassword({email,password});
+if(r.error)return say(r.error.message);
+if(mode==="signup"&&!r.data.session)return say("حساب ساخته شد؛ ایمیلت را تأیید کن و سپس وارد شو.");
+user=r.data.user;show(true);status("حساب متصل است",true);say("ورود موفق بود.");
+}
+
+$("signup").onclick=()=>auth("signup");
+$("login").onclick=()=>auth("login");
+$("logout").onclick=async()=>{
+await db.auth.signOut();user=null;room=null;show(false);showBoard(false);
+if(channel)await db.removeChannel(channel);
+status("خارج شدی");
+};
+
+const canvas=$("canvas"),ctx=canvas.getContext("2d");
+
+function resize(){
+let r=canvas.getBoundingClientRect(),d=Math.min(2,devicePixelRatio||1);
+canvas.width=Math.round(r.width*d);
+canvas.height=Math.round(r.height*d);
+ctx.setTransform(d,0,0,d,0,0);
+render();
+}
+
+function screenToWorld(p){
+return{x:(p.x-view.x)/view.scale,y:(p.y-view.y)/view.scale};
+}
+
+function render(){
+let w=canvas.clientWidth,h=canvas.clientHeight;
+ctx.setTransform(1,0,0,1,0,0);
+ctx.clearRect(0,0,canvas.width,canvas.height);
+let d=Math.min(2,devicePixelRatio||1);
+ctx.setTransform(d,0,0,d,0,0);
+ctx.fillStyle="#fff";
+ctx.fillRect(0,0,w,h);
+ctx.save();
+ctx.translate(view.x,view.y);
+ctx.scale(view.scale,view.scale);
+currentStrokes().forEach(drawItem);
+if(drawing)drawItem(drawing);
+
+if(selectedId){
+let it=currentStrokes().find(x=>x.id===selectedId);
+if(it){
+let b=itemBounds(it);
+if(b){
+ctx.strokeStyle="#3977ff";
+ctx.lineWidth=1.5/view.scale;
+ctx.setLineDash([6/view.scale,4/view.scale]);
+ctx.strokeRect(b.x-5/view.scale,b.y-5/view.scale,b.w+10/view.scale,b.h+10/view.scale);
+ctx.setLineDash([]);
+}
+}
+}
+ctx.restore();
+}
+
+function drawItem(s){
+ctx.save();
+ctx.lineCap="round";
+ctx.lineJoin="round";
+ctx.strokeStyle=s.tool==="eraser"?"#fff":(s.color||"#172033");
+ctx.fillStyle=ctx.strokeStyle;
+ctx.lineWidth=s.size||4;
+
+if(s.tool==="pen"||s.tool==="eraser"){
+let pts=s.points||[];
+if(!pts.length){ctx.restore();return;}
+if(pts.length===1){
+ctx.beginPath();
+ctx.arc(pts[0].x,pts[0].y,(s.size||4)/2,0,Math.PI*2);
+ctx.fill();
+}else{
+ctx.beginPath();
+ctx.moveTo(pts[0].x,pts[0].y);
+for(let p of pts.slice(1))ctx.lineTo(p.x,p.y);
+ctx.stroke();
+}
+}
+else if(s.tool==="line"){
+ctx.beginPath();ctx.moveTo(s.a.x,s.a.y);ctx.lineTo(s.b.x,s.b.y);ctx.stroke();
+}
+else if(s.tool==="rect"){
+ctx.strokeRect(Math.min(s.a.x,s.b.x),Math.min(s.a.y,s.b.y),Math.abs(s.b.x-s.a.x),Math.abs(s.b.y-s.a.y));
+}
+else if(s.tool==="ellipse"){
+ctx.beginPath();
+ctx.ellipse((s.a.x+s.b.x)/2,(s.a.y+s.b.y)/2,Math.max(1,Math.abs(s.b.x-s.a.x)/2),Math.max(1,Math.abs(s.b.y-s.a.y)/2),0,0,Math.PI*2);
+ctx.stroke();
+}
+else if(s.tool==="text"){
+ctx.font=`${s.size*5+12}px Tahoma,Arial`;
+ctx.fillText(s.text,s.at.x,s.at.y);
+}
+else if(s.tool==="image"&&s.data){
+let im=imageCache.get(s.id);
+if(!im){
+im=new Image();im.src=s.data;imageCache.set(s.id,im);
+im.onload=()=>{if(s.pageId===activePage)render()};
+}
+if(im.complete&&im.naturalWidth)ctx.drawImage(im,s.x,s.y,s.w,s.h);
+}
+else if(s.tool==="pdftext"){
+ctx.fillStyle=s.background||"#fff";
+ctx.fillRect((s.maskX??s.x)-1,(s.maskY??s.y)-1,s.maskW||s.w+2,s.maskH||s.h+2);
+ctx.fillStyle=s.color||"#111";
+ctx.textBaseline="alphabetic";
+ctx.font=`${s.fontSize||14}px ${s.fontFamily||"Arial"}`;
+ctx.fillText(s.text||"",s.x,s.y+(s.h*.82),Math.max(8,s.w*1.8));
+}
+ctx.restore();
+}
+
+function itemBounds(s){
+if(s.tool==="pen"||s.tool==="eraser"){
+let a=s.points||[];
+if(!a.length)return null;
+let xs=a.map(p=>p.x),ys=a.map(p=>p.y);
+return{x:Math.min(...xs),y:Math.min(...ys),w:Math.max(2,Math.max(...xs)-Math.min(...xs)),h:Math.max(2,Math.max(...ys)-Math.min(...ys))};
+}
+if(s.tool==="line"||s.tool==="rect"||s.tool==="ellipse"){
+return{x:Math.min(s.a.x,s.b.x),y:Math.min(s.a.y,s.b.y),w:Math.abs(s.b.x-s.a.x),h:Math.abs(s.b.y-s.a.y)};
+}
+if(s.tool==="text")return{x:s.at.x,y:s.at.y-(s.size*5+12),w:Math.max(30,s.text.length*(s.size*2+6)),h:s.size*5+18};
+if(s.tool==="image")return{x:s.x,y:s.y,w:s.w,h:s.h};
+if(s.tool==="pdftext")return{x:s.x,y:s.y,w:Math.max(8,s.w),h:Math.max(8,s.h)};
+return null;
+}
+
+function hitItem(p){
+let arr=currentStrokes();
+for(let i=arr.length-1;i>=0;i--){
+let b=itemBounds(arr[i]);
+if(b&&p.x>=b.x-8&&p.x<=b.x+b.w+8&&p.y>=b.y-8&&p.y<=b.y+b.h+8)return arr[i];
+}
+return null;
+}
+
+function moveItem(item,dx,dy){
+let n=structuredClone(item);
+if(n.points)n.points=n.points.map(p=>({x:p.x+dx,y:p.y+dy}));
+if(n.a){n.a={x:n.a.x+dx,y:n.a.y+dy};n.b={x:n.b.x+dx,y:n.b.y+dy};}
+if(n.at)n.at={x:n.at.x+dx,y:n.at.y+dy};
+if(n.tool==="image"||n.tool==="pdftext"){n.x+=dx;n.y+=dy;}
+return n;
+}
+
+function localPoint(e){
+let r=canvas.getBoundingClientRect();
+return screenToWorld({x:e.clientX-r.left,y:e.clientY-r.top});
+}
+
+function pointerAllowed(e){
+if(e.pointerType==="pen"){penActiveUntil=Date.now()+900;return true;}
+if(e.pointerType==="touch"&&Date.now()<penActiveUntil)return false;
+return true;
+}
+
+async function emit(ev){
+if(!room||!activePage)return;
+ev.pageId=activePage;
+let {data,error}=await db.from("pensync_events").insert({room_id:room.id,event:ev}).select("id").single();
+if(error){console.error(error);say("ذخیره ناموفق: "+error.message);return;}
+if(data)seen.add(data.id);
+}
+
+function addPage(p){
+if(!pages.some(x=>x.id===p.id)){pages.push(p);pageStrokes.set(p.id,[]);}
+renderPages();
+}
+
+function applyEvent(ev){
+if(ev.type==="page-create"){
+addPage({id:ev.pageId,title:ev.title||"صفحه"});
+if(!activePage)activePage=ev.pageId;
+renderPages();return;
+}
+if(ev.type==="page-rename"){
+let p=pages.find(x=>x.id===ev.pageId);
+if(p)p.title=ev.title;
+renderPages();return;
+}
+if(ev.type==="stroke"){
+let arr=pageStrokes.get(ev.pageId)||[];
+if(!arr.some(x=>x.id===ev.stroke.id))arr.push(ev.stroke);
+pageStrokes.set(ev.pageId,arr);
+}
+if(ev.type==="undo"){
+let arr=pageStrokes.get(ev.pageId)||[];
+let i=arr.findIndex(x=>x.id===ev.strokeId);
+if(i>=0){let removed=arr.splice(i,1)[0];redoStack.push({pageId:ev.pageId,stroke:removed});}
+}
+if(ev.type==="redo"){
+let arr=pageStrokes.get(ev.pageId)||[];
+if(!arr.some(x=>x.id===ev.stroke.id))arr.push(ev.stroke);
+redoStack=[];
+}
+if(ev.type==="stroke-update"){
+let arr=pageStrokes.get(ev.pageId)||[];
+let i=arr.findIndex(x=>x.id===ev.stroke.id);
+if(i>=0)arr[i]=ev.stroke;
+}
+if(ev.type==="stroke-delete"){
+let arr=pageStrokes.get(ev.pageId)||[];
+let i=arr.findIndex(x=>x.id===ev.strokeId);
+if(i>=0)arr.splice(i,1);
+}
+if(ev.type==="clear")pageStrokes.set(ev.pageId,[]);
+if(ev.pageId===activePage)render();
+}
+
+function renderPages(){
+$("pages").innerHTML="";
+pages.forEach(p=>{
+let b=document.createElement("button");
+b.className="pagebtn"+(p.id===activePage?" active":"");
+b.textContent=p.title;
+b.onclick=()=>{activePage=p.id;renderPages();render()};
+$("pages").appendChild(b);
+});
+let add=document.createElement("button");
+add.textContent="+ صفحه";add.onclick=createPage;
+$("pages").appendChild(add);
+let rename=document.createElement("button");
+rename.textContent="تغییر نام";rename.disabled=!activePage;rename.onclick=renamePage;
+$("pages").appendChild(rename);
+}
+
+async function createPage(){
+let id=uid(),title="صفحه "+(pages.length+1);
+addPage({id,title});activePage=id;render();
+await emit({type:"page-create",pageId:id,title});
+renderPages();
+}
+
+async function renamePage(){
+let p=pages.find(x=>x.id===activePage);if(!p)return;
+let t=prompt("نام جدید صفحه:",p.title);
+if(!t?.trim())return;
+p.title=t.trim().slice(0,40);
+renderPages();
+await emit({type:"page-rename",pageId:activePage,title:p.title});
+}
+
+async function loadRoom(code){
+if(!user)return;
+status("در حال بازکردن دفتر…");
+let {data,error}=await db.from("pensync_rooms").select("*").eq("code",code).maybeSingle();
+if(error||!data){status("دفتر پیدا نشد");return say("دفتر پیدا نشد یا متعلق به این حساب نیست.");}
+room=data;pages=[];pageStrokes.clear();seen.clear();activePage="";selectedId=null;redoStack=[];
+let res=await db.from("pensync_events").select("id,event").eq("room_id",room.id).order("created_at",{ascending:true}).limit(20000);
+if(res.error)return say("بارگذاری ناموفق: "+res.error.message);
+(res.data||[]).forEach(x=>{seen.add(x.id);applyEvent(x.event)});
+if(!pages.length){
+let id=uid();
+applyEvent({type:"page-create",pageId:id,title:"صفحه 1"});
+activePage=id;
+await db.from("pensync_events").insert({room_id:room.id,event:{type:"page-create",pageId:id,title:"صفحه 1"}});
+}
+if(!activePage)activePage=pages[0].id;
+if(channel)await db.removeChannel(channel);
+channel=db.channel("pensync-v3-"+room.id)
+.on("postgres_changes",{event:"INSERT",schema:"public",table:"pensync_events",filter:"room_id=eq."+room.id},payload=>{
+let row=payload.new;
+if(seen.has(row.id))return;
+seen.add(row.id);applyEvent(row.event);
+})
+.subscribe(s=>{
+if(s==="SUBSCRIBED")status("همگام‌سازی زنده فعال",true);
+else if(s==="CHANNEL_ERROR")status("خطای همگام‌سازی");
+});
+$("roomLabel").textContent="دفتر: "+room.code;
+$("roomInput").value=room.code;
+$("copyLink").disabled=false;
+$("qrBtn").disabled=false;
+showBoard(true);renderPages();resize();
+let u=new URL(location.href);
+u.searchParams.set("room",room.code);
+history.replaceState({}, "",u);
+say("دفتر آماده است.");
+}
+
+$("newRoom").onclick=async()=>{
+let code="PS-"+Array.from(crypto.getRandomValues(new Uint8Array(5))).map(x=>x.toString(16).padStart(2,"0")).join("").toUpperCase();
+let {data,error}=await db.from("pensync_rooms").insert({code,name:"دفتر شخصی"}).select().single();
+if(error)return say("ساخت دفتر ناموفق: "+error.message);
+await loadRoom(data.code);
+};
+
+$("openRoom").onclick=()=>{
+let c=$("roomInput").value.trim().toUpperCase();
+if(c)loadRoom(c);
+};
+
+$("copyLink").onclick=async()=>{
+try{await navigator.clipboard.writeText(location.href);say("لینک دفتر کپی شد.");}
+catch{say("لینک صفحه را از نوار آدرس کپی کن.");}
+};
+
+$("qrBtn").onclick=()=>{
+QRCode.toDataURL(location.href,{width:240,margin:1},(e,u)=>{
+if(e)return say("QR ساخته نشد");
+$("qr").src=u;$("qr").classList.toggle("hidden");
+});
+};
+
+document.querySelectorAll("[data-tool]").forEach(b=>b.onclick=()=>{
+tool=b.dataset.tool;
+document.querySelectorAll("[data-tool]").forEach(x=>x.classList.toggle("active",x===b));
+});
+
+canvas.addEventListener("pointerdown",e=>{
+if(!pointerAllowed(e)||!room)return;
+e.preventDefault();canvas.setPointerCapture(e.pointerId);
+let p=localPoint(e);
+if(tool==="pan"||spaceDown){pointerMode="pan";lastPan={x:e.clientX,y:e.clientY};return;}
+if(tool==="select"){
+let hit=hitItem(p);selectedId=hit?.id||null;selectionStart=p;
+if(hit){pointerMode="move-selection";drawing=null;}
+else{pointerMode="select-box";drawing={tool:"rect",a:p,b:p,color:"#3977ff",size:1};}
+render();return;
+}
+if(tool==="text"){
+let text=prompt("متن موردنظر:");
+if(text){
+let item={id:uid(),tool:"text",text,at:p,color:$("color").value,size:+$("size").value};
+applyEvent({type:"stroke",pageId:activePage,stroke:item});
+emit({type:"stroke",stroke:item});
+}
+return;
+}
+pointerMode="draw";
+drawing={id:uid(),tool,color:$("color").value,size:+$("size").value,a:p,b:p,points:[p]};
+render();
+});
+
+canvas.addEventListener("pointermove",e=>{
+if(!pointerMode)return;
+e.preventDefault();
+if(pointerMode==="pan"){
+view.x+=e.clientX-lastPan.x;view.y+=e.clientY-lastPan.y;
+lastPan={x:e.clientX,y:e.clientY};render();return;
+}
+let p=localPoint(e);
+if(pointerMode==="move-selection"&&selectedId){
+let arr=currentStrokes(),it=arr.find(x=>x.id===selectedId);
+if(it){
+let moved=moveItem(it,p.x-selectionStart.x,p.y-selectionStart.y);
+let idx=arr.findIndex(x=>x.id===selectedId);
+arr[idx]=moved;selectionStart=p;render();
+}
+return;
+}
+if(pointerMode==="select-box"){drawing.b=p;render();return;}
+if(tool==="pen"||tool==="eraser")drawing.points.push(p);
+else drawing.b=p;
+render();
+});
+
+async function finish(){
+if(!pointerMode)return;
+if(pointerMode==="move-selection"&&selectedId){
+let it=currentStrokes().find(x=>x.id===selectedId);
+if(it)await emit({type:"stroke-update",stroke:it});
+pointerMode=null;selectionStart=null;render();return;
+}
+if(pointerMode==="select-box"&&drawing){
+let b={x:Math.min(drawing.a.x,drawing.b.x),y:Math.min(drawing.a.y,drawing.b.y),w:Math.abs(drawing.b.x-drawing.a.x),h:Math.abs(drawing.b.y-drawing.a.y)};
+let hit=currentStrokes().find(it=>{
+let q=itemBounds(it);
+return q&&q.x>=b.x&&q.y>=b.y&&q.x+q.w<=b.x+b.w&&q.y+q.h<=b.y+b.h;
+});
+selectedId=hit?.id||null;drawing=null;pointerMode=null;render();return;
+}
+if(pointerMode==="draw"&&drawing){
+let s=drawing;drawing=null;pointerMode=null;
+applyEvent({type:"stroke",pageId:activePage,stroke:s});
+await emit({type:"stroke",stroke:s});
+}else{pointerMode=null;lastPan=null;}
+}
+
+canvas.addEventListener("pointerup",finish);
+canvas.addEventListener("pointercancel",finish);
+
+window.addEventListener("keydown",e=>{if(e.code==="Space")spaceDown=true});
+window.addEventListener("keyup",e=>{if(e.code==="Space")spaceDown=false});
+
+canvas.addEventListener("wheel",e=>{
+if(!e.ctrlKey)return;
+e.preventDefault();
+let r=canvas.getBoundingClientRect(),px=e.clientX-r.left,py=e.clientY-r.top,old=view.scale;
+view.scale=Math.max(.25,Math.min(4,view.scale*(e.deltaY<0?1.1:.9)));
+view.x=px-(px-view.x)*view.scale/old;
+view.y=py-(py-view.y)*view.scale/old;
+render();
+},{passive:false});
+
+$("zoomIn").onclick=()=>{view.scale=Math.min(4,view.scale*1.2);render()};
+$("zoomOut").onclick=()=>{view.scale=Math.max(.25,view.scale/1.2);render()};
+$("zoomReset").onclick=()=>{view={scale:1,x:0,y:0};render()};
+$("size").oninput=e=>$("sizeVal").textContent=e.target.value;
+
+$("undo").onclick=async()=>{
+let a=currentStrokes();if(!a.length)return;
+let id=a[a.length-1].id;
+await emit({type:"undo",strokeId:id});
+applyEvent({type:"undo",pageId:activePage,strokeId:id});
+};
+
+$("redo").onclick=async()=>{
+let r=redoStack.pop();
+if(!r||r.pageId!==activePage)return say("چیزی برای ازنو وجود ندارد.");
+await emit({type:"redo",stroke:r.stroke});
+applyEvent({type:"redo",pageId:activePage,stroke:r.stroke});
+};
+
+$("copySelection").onclick=()=>{
+let it=currentStrokes().find(x=>x.id===selectedId);
+if(!it)return say("ابتدا یک شیء را انتخاب کن.");
+clipboardItem=structuredClone(it);say("کپی شد.");
+};
+
+$("pasteSelection").onclick=async()=>{
+if(!clipboardItem)return say("چیزی کپی نشده است.");
+let n=structuredClone(clipboardItem);n.id=uid();n=moveItem(n,24,24);
+applyEvent({type:"stroke",pageId:activePage,stroke:n});
+await emit({type:"stroke",stroke:n});
+selectedId=n.id;render();
+};
+
+$("deleteSelection").onclick=async()=>{
+if(!selectedId)return say("چیزی انتخاب نشده است.");
+await emit({type:"stroke-delete",strokeId:selectedId});
+applyEvent({type:"stroke-delete",pageId:activePage,strokeId:selectedId});
+selectedId=null;
+};
+
+$("editPdfText").onclick=async()=>{
+let item=currentStrokes().find(x=>x.id===selectedId);
+if(!item||item.tool!=="pdftext")return say("یک قطعه متن واردشده از PDF را انتخاب کن.");
+let value=prompt("متن جدید:",item.text);
+if(value===null)return;
+let updated={...item,text:value};
+let arr=currentStrokes(),idx=arr.findIndex(x=>x.id===selectedId);
+arr[idx]=updated;
+await emit({type:"stroke-update",stroke:updated});
+render();
+};
+
+$("importPdf").onclick=()=>$("pdfFile").click();
+
+$("pdfFile").onchange=async e=>{
+let file=e.target.files[0];if(!file)return;
+if(!window.pdfjsLib)return say("کتابخانه PDF بارگذاری نشد.");
+try{
+pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+let pdf=await pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise;
+if(pdf.numPages>30)return say("برای پایداری، هر بار حداکثر ۳۰ صفحه وارد کن.");
+say("در حال واردکردن PDF و استخراج متن…");
+for(let i=1;i<=pdf.numPages;i++){
+let pg=await pdf.getPage(i),vp=pg.getViewport({scale:1.35}),c=document.createElement("canvas");
+c.width=vp.width;c.height=vp.height;
+await pg.render({canvasContext:c.getContext("2d"),viewport:vp}).promise;
+let data=c.toDataURL("image/jpeg",.82),id=uid(),title="PDF "+i;
+addPage({id,title});activePage=id;
+await db.from("pensync_events").insert({room_id:room.id,event:{type:"page-create",pageId:id,title}});
+let bg={id:uid(),tool:"image",data,x:0,y:0,w:vp.width,h:vp.height,pageId:id};
+await db.from("pensync_events").insert({room_id:room.id,event:{type:"stroke",pageId:id,stroke:bg}});
+applyEvent({type:"stroke",pageId:id,stroke:bg});
+let tc=await pg.getTextContent();
+for(let t of tc.items){
+if(!t.str||!t.str.trim()||!t.transform)continue;
+let pt=vp.convertToViewportPoint(t.transform[4],t.transform[5]);
+let fs=Math.max(7,Math.abs(t.transform[3])*vp.scale);
+let w=Math.max(8,(t.width||t.str.length*fs*.5)*vp.scale);
+let h=Math.max(9,fs*1.25);
+let obj={id:uid(),tool:"pdftext",text:t.str,x:pt[0],y:pt[1]-h,w,h,maskX:pt[0],maskY:pt[1]-h,maskW:w+2,maskH:h+2,fontSize:fs,color:"#111",background:"#fff",pageId:id};
+await db.from("pensync_events").insert({room_id:room.id,event:{type:"stroke",pageId:id,stroke:obj}});
+applyEvent({type:"stroke",pageId:id,stroke:obj});
+}
+}
+renderPages();render();say("PDF وارد شد. متن‌های قابل استخراج را می‌توانی انتخاب و ویرایش کنی.");
+}catch(err){console.error(err);say("ورود PDF ناموفق بود: "+err.message)}
+e.target.value="";
+};
+
+$("exportPdf").onclick=async()=>{
+if(!window.jspdf?.jsPDF)return say("کتابخانه خروجی PDF بارگذاری نشد.");
+try{
+let {jsPDF}=window.jspdf,doc=null;
+for(let i=0;i<pages.length;i++){
+let p=pages[i];activePage=p.id;view={scale:1,x:0,y:0};render();
+await new Promise(r=>requestAnimationFrame(r));
+let data=canvas.toDataURL("image/jpeg",.92),w=canvas.width,h=canvas.height,land=w>=h;
+let d=new jsPDF({orientation:land?"landscape":"portrait",unit:"px",format:[w,h]});
+d.addImage(data,"JPEG",0,0,w,h);
+if(!doc)doc=d;
+else{doc.addPage([w,h],land?"landscape":"portrait");doc.addImage(data,"JPEG",0,0,w,h);}
+}
+if(doc)doc.save("PenSync-"+room.code+".pdf");
+}catch(err){console.error(err);say("ساخت PDF ناموفق بود.")}
+};
+
+$("present").onclick=async()=>{
+let el=$("boardWrap");
+if(!document.fullscreenElement)await el.requestFullscreen?.();
+else await document.exitFullscreen?.();
+};
+
+window.addEventListener("keydown",e=>{
+if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="c"){
+let it=currentStrokes().find(x=>x.id===selectedId);
+if(it)clipboardItem=structuredClone(it);
+}
+if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="v"&&clipboardItem){
+e.preventDefault();$("pasteSelection").click();
+}
+if(e.key==="Delete"&&selectedId)$("deleteSelection").click();
+});
+
+$("clear").onclick=async()=>{
+if(!confirm("این صفحه پاک شود؟"))return;
+await emit({type:"clear"});
+applyEvent({type:"clear",pageId:activePage});
+};
+
+$("png").onclick=()=>{
+let old=view;view={scale:1,x:0,y:0};render();
+let a=document.createElement("a");
+a.download="PenSync-"+(room?.code||"board")+"-"+(pages.find(p=>p.id===activePage)?.title||"page")+".png";
+a.href=canvas.toDataURL("image/png");a.click();
+view=old;render();
+};
+
+new ResizeObserver(resize).observe($("boardWrap"));
+
+async function init(){
+if(!SUPABASE_URL.startsWith("https://")||SUPABASE_ANON_KEY.includes("YOUR_")){
+status("تنظیم Supabase لازم است");return;
+}
+db=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
+let {data}=await db.auth.getSession();
+if(data.session){
+user=data.session.user;show(true);status("حساب متصل است",true);
+let c=new URLSearchParams(location.search).get("room");
+if(c)loadRoom(c);
+}
+db.auth.onAuthStateChange((_e,s)=>{
+if(s){user=s.user;show(true);status("حساب متصل است",true)}
+else{user=null;show(false);showBoard(false);status("ورود لازم است")}
+});
+}
+init();
+})();
+</script>
+</body></html>
